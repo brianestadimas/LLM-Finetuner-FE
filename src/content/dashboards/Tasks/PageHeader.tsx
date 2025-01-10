@@ -12,8 +12,8 @@ import AddAlertTwoToneIcon from '@mui/icons-material/AddAlertTwoTone';
 
 const AvatarPageTitle = styled(Avatar)(
   ({ theme }) => `
-      width: ${theme.spacing(8)};
-      height: ${theme.spacing(8)};
+      width: ${theme.spacing(6)};
+      height: ${theme.spacing(6)};
       color: ${theme.colors.primary.main};
       margin-right: ${theme.spacing(2)};
       background: ${
@@ -36,7 +36,7 @@ const AvatarPageTitle = styled(Avatar)(
 
 function PageHeader() {
   const user = {
-    name: 'Catherine Pike',
+    name: 'Brian Test',
     avatar: '/static/images/avatars/1.jpg'
   };
 
@@ -56,14 +56,13 @@ function PageHeader() {
             Welcome, {user.name}!
           </Typography>
           <Typography variant="subtitle2">
-            Manage your day to day tasks with style! Enjoy a well built UI
-            system.
+            Finetune to streamline your workflow and enhance your model’s performance with precision. 
           </Typography>
         </Box>
       </Box>
       <Box mt={{ xs: 3, md: 0 }}>
         <Button variant="contained" startIcon={<DocumentScannerTwoToneIcon />}>
-          Export
+          View Documentation
         </Button>
       </Box>
     </Box>

@@ -17,9 +17,6 @@ function Footer() {
         justifyContent="space-between"
       >
         <Box>
-          <Typography variant="subtitle1">
-            &copy; 2022 - Tokyo Free Black React Typescript Admin Dashboard
-          </Typography>
         </Box>
         <Typography
           sx={{
@@ -27,14 +24,6 @@ function Footer() {
           }}
           variant="subtitle1"
         >
-          Crafted by{' '}
-          <Link
-            href="https://bloomui.com"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            BloomUI.com
-          </Link>
         </Typography>
       </Box>
     </FooterWrapper>

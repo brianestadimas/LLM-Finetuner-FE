@@ -1,164 +1,101 @@
-import {
-  Box,
-  CardHeader,
-  Typography,
-  IconButton,
-  FormControlLabel,
-  Checkbox,
-  FormGroup,
-  Tooltip,
-  styled
-} from '@mui/material';
-import Timeline from '@mui/lab/Timeline';
-import TimelineItem from '@mui/lab/TimelineItem';
-import TimelineSeparator from '@mui/lab/TimelineSeparator';
-import TimelineConnector from '@mui/lab/TimelineConnector';
-import TimelineContent from '@mui/lab/TimelineContent';
-import TimelineDot from '@mui/lab/TimelineDot';
-import RefreshTwoToneIcon from '@mui/icons-material/RefreshTwoTone';
-import AssignmentTwoToneIcon from '@mui/icons-material/AssignmentTwoTone';
-import AccountTreeTwoToneIcon from '@mui/icons-material/AccountTreeTwoTone';
-import BusinessCenterTwoToneIcon from '@mui/icons-material/BusinessCenterTwoTone';
+import React, { useState } from 'react';
+import { Box, TextField, MenuItem, Card, CardHeader, Divider, CardContent, Typography } from '@mui/material';
+import { Settings, Tune, Layers } from '@mui/icons-material';
 
-const TimelineWrapper = styled(Timeline)(
-  ({ theme }) => `
-    margin-left: ${theme.spacing(2)};
+function AdvancedSettings() {
+  const [optim, setOptim] = useState("adamw_torch");
 
-    .MuiTimelineDot-root {
-      left: -${theme.spacing(2)};
-      margin-top: 0;
-      top: ${theme.spacing(0.5)};
-    }
-    
-    .MuiTimelineContent-root {
-      padding-left: ${theme.spacing(4)};
-    }
-    
-    .MuiFormControlLabel-root {
-      margin-left: -${theme.spacing(0.7)};
-    }
-    
-    .MuiFormControlLabel-label {
-      color: ${theme.colors.alpha.black[50]};
-    }
-`
-);
+  const handleOptimChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setOptim(event.target.value);
+  };
 
-const CheckboxWrapper = styled(Checkbox)(
-  ({ theme }) => `
-    padding: ${theme.spacing(0.5)};
-`
-);
-
-function Checklist() {
   return (
-    <Box>
-      <CardHeader
-        sx={{
-          px: 0,
-          pt: 0
-        }}
-        action={
-          <Tooltip arrow title="Refresh list">
-            <IconButton size="small" color="primary">
-              <RefreshTwoToneIcon />
-            </IconButton>
-          </Tooltip>
-        }
-        title="Checklist"
-      />
-      <TimelineWrapper>
-        <TimelineItem>
-          <TimelineSeparator>
-            <TimelineDot color="primary">
-              <AssignmentTwoToneIcon />
-            </TimelineDot>
-            <TimelineConnector />
-          </TimelineSeparator>
-          <TimelineContent>
-            <Typography
-              variant="h4"
-              sx={{
-                pb: 2
-              }}
-            >
-              "Tasks Quick List"
-            </Typography>
-            <FormGroup>
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Prepare website launch"
-              />
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Build React Native application"
-              />
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Fix remaining bugs for first 4 pages"
-              />
-            </FormGroup>
-          </TimelineContent>
-        </TimelineItem>
-        <TimelineItem>
-          <TimelineSeparator>
-            <TimelineDot color="primary">
-              <AccountTreeTwoToneIcon />
-            </TimelineDot>
-            <TimelineConnector />
-          </TimelineSeparator>
-          <TimelineContent>
-            <Typography
-              variant="h4"
-              sx={{
-                pb: 2
-              }}
-            >
-              "Project Management"
-            </Typography>
-            <FormGroup>
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Complete sales pitch"
-              />
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Improve SEO visibility"
-              />
-            </FormGroup>
-          </TimelineContent>
-        </TimelineItem>
-        <TimelineItem>
-          <TimelineSeparator>
-            <TimelineDot color="primary">
-              <BusinessCenterTwoToneIcon />
-            </TimelineDot>
-            <TimelineConnector />
-          </TimelineSeparator>
-          <TimelineContent>
-            <Typography
-              variant="h4"
-              sx={{
-                pb: 2
-              }}
-            >
-              "Business & Marketing"
-            </Typography>
-            <FormGroup>
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Create marketing campaign"
-              />
-              <FormControlLabel
-                control={<CheckboxWrapper color="primary" name="checkedC" />}
-                label="Sign business contract with partners"
-              />
-            </FormGroup>
-          </TimelineContent>
-        </TimelineItem>
-      </TimelineWrapper>
-    </Box>
+    <Card>
+      <CardHeader title="Advanced Settings" />
+      <Divider />
+      <CardContent>
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h6" display="flex" alignItems="center" sx={{ mb: 2 }}>
+            <Settings fontSize="small" sx={{ mr: 1 }} />
+            Hyperparameters
+          </Typography>
+          <TextField
+            label="Epoch"
+            type="number"
+            InputProps={{ inputProps: { min: 1, max: 100 } }}
+            defaultValue={1}
+            sx={{ m: 1, width: '25ch' }}
+          />
+          <TextField
+            label="Learning Rate"
+            type="number"
+            InputProps={{ inputProps: { step: 0.0001 } }}
+            defaultValue={0.0001}
+            sx={{ m: 1, width: '25ch' }}
+          />
+          <TextField
+            label="Warmup Ratio"
+            type="number"
+            InputProps={{ inputProps: { step: 0.1, min: 0, max: 1 } }}
+            defaultValue={0.1}
+            sx={{ m: 1, width: '25ch' }}
+          />
+        </Box>
+        <Divider sx={{ my: 3 }} />
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h6" display="flex" alignItems="center" sx={{ mb: 2 }}>
+            <Tune fontSize="small" sx={{ mr: 1 }} />
+            Gradients
+          </Typography>
+          <TextField
+            label="Optimizer"
+            select
+            value={optim}
+            onChange={handleOptimChange}
+            sx={{ m: 1, width: '25ch' }}
+          >
+            <MenuItem value="adamw_torch">adamw_torch</MenuItem>
+            <MenuItem value="adamw_hf">adamw_hf</MenuItem>
+          </TextField>
+          <TextField
+            label="Gradient Accumulation Steps"
+            type="number"
+            defaultValue={64}
+            InputProps={{ inputProps: { min: 1 } }}
+            sx={{ m: 1, width: '25ch' }}
+          />
+        </Box>
+        <Divider sx={{ my: 3 }} />
+        <Box>
+          <Typography variant="h6" display="flex" alignItems="center" sx={{ mb: 2 }}>
+            <Layers fontSize="small" sx={{ mr: 1 }} />
+            LoRA
+          </Typography>
+          <TextField
+            label="Peft R"
+            type="number"
+            InputProps={{ inputProps: { min: 1, max: 32 } }}
+            defaultValue={8}
+            sx={{ m: 1, width: '25ch' }}
+          />
+          <TextField
+            label="Peft Alpha"
+            type="number"
+            InputProps={{ inputProps: { min: 1, max: 32 } }}
+            defaultValue={16}
+            sx={{ m: 1, width: '25ch' }}
+          />
+          <TextField
+            label="Peft Dropout"
+            type="number"
+            InputProps={{ inputProps: { min: 0, max: 1, step: 0.01 } }}
+            defaultValue={0.05}
+            sx={{ m: 1, width: '25ch' }}
+          />
+        </Box>
+      </CardContent>
+    </Card>
   );
 }
 
-export default Checklist;
+export default AdvancedSettings;

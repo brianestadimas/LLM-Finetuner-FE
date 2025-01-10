@@ -96,7 +96,7 @@ function Hero() {
           </TypographyH2>
           <Button
             component={RouterLink}
-            to="/dashboards/tasks"
+            to="/tasks"
             size="large"
             variant="contained"
           >
