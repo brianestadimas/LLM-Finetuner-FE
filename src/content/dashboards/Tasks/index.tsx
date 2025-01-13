@@ -37,7 +37,6 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CircularProgress from '@mui/material/CircularProgress';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 
-// Icon imports for Advanced Settings
 import Settings from '@mui/icons-material/Settings';
 import Tune from '@mui/icons-material/Tune';
 import Layers from '@mui/icons-material/Layers';
@@ -129,6 +128,7 @@ const TabsContainerWrapper = styled(Box)(
 );
 
 function DashboardTasks() {
+  const API_HOST = process.env.REACT_APP_API_HOST; 
   const theme = useTheme();
   const [currentTab, setCurrentTab] = useState<string>('analytics');
 
@@ -141,14 +141,18 @@ function DashboardTasks() {
     setCurrentTab(value);
   };
 
-  // Rows & pagination
+  //
+  // 1) RowData: add `file?: File` so we can keep the actual file for uploading
+  //
   interface RowData {
     checked: boolean;
-    image: string | null;
+    image: string | null; // for preview
+    file?: File;          // actual file to upload
     input: string;
     output: string;
   }
 
+  // 2) Table state
   const [rows, setRows] = useState<RowData[]>([
     {
       checked: false,
@@ -169,7 +173,6 @@ function DashboardTasks() {
     setPage(0);
   };
 
-  // Handlers
   const handleCheckboxChange = (index: number) => {
     setRows((prevRows) => {
       const updated = [...prevRows];
@@ -178,6 +181,9 @@ function DashboardTasks() {
     });
   };
 
+  //
+  // 3) Modify handleImageUpload to also store the File object in row.file
+  //
   const handleImageUpload = (index: number, event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
@@ -185,18 +191,19 @@ function DashboardTasks() {
 
       setRows((prevRows) => {
         const updated = [...prevRows];
-        updated[index].image = imageURL;
+        updated[index].image = imageURL; // preview
+        updated[index].file = file;      // actual file for upload
         return updated;
       });
     }
   };
 
-  const handleCSVUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (!event.target.files || !event.target.files[0]) return;
+  const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files?.[0]) return;
     const file = event.target.files[0];
     const reader = new FileReader();
   
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       if (!e.target?.result) return;
       const text = e.target.result.toString().trim();
       if (!text) {
@@ -204,63 +211,85 @@ function DashboardTasks() {
         return;
       }
   
-      // 1) Try to detect delimiter (basic approach)
       let delimiter = ',';
       if (text.includes(';') && !text.includes(',')) {
         delimiter = ';';
       }
   
-      // 2) Split lines
       const lines = text.split(/\r?\n/).filter(Boolean);
       if (lines.length < 2) {
         console.error('CSV appears empty or has no data rows');
         return;
       }
   
-      // 3) Parse header row (case-insensitive, strip quotes/spaces)
-      const headerRaw = lines[0].split(delimiter).map((h) => {
-        return h.replace(/^"|"$/g, '').trim().toLowerCase();
-      });
+      const headerRaw = lines[0].split(delimiter).map((h) =>
+        h.replace(/^"|"$/g, '').trim().toLowerCase()
+      );
   
-      // Required columns:
       const inputIdx = headerRaw.indexOf('input');
       const outputIdx = headerRaw.indexOf('output');
-  
-      // Optional column:
       const imageIdx = headerRaw.indexOf('image_url');
   
-      // If required columns are missing, exit
       if (inputIdx === -1 || outputIdx === -1) {
-        console.error('CSV must have at least input and output columns (check spelling or case).');
+        console.error('CSV must have at least input and output columns.');
         return;
       }
   
-      // 4) Build new rows
+      const sanitizeUrl = (url: string): string => {
+        return url.replace(/['"]/g, '').replace(/\s+alt=.*$/, '').trim();
+      };
+  
       const newRows: RowData[] = [];
+      // Process CSV rows
       for (let i = 1; i < lines.length; i++) {
-        // Split row by delimiter, strip quotes/spaces
         const cells = lines[i].split(delimiter).map((c) => c.replace(/^"|"$/g, '').trim());
-        if (cells.length < headerRaw.length) continue; // skip incomplete lines
+        if (cells.length < headerRaw.length) continue;
   
         const userInput = cells[inputIdx] || '';
         const userOutput = cells[outputIdx] || '';
-  
-        // If image_url column exists, take its value. Otherwise, no image.
         let imageUrl = '';
+  
         if (imageIdx !== -1) {
           imageUrl = cells[imageIdx] || '';
         }
   
         newRows.push({
           checked: false,
-          image: imageUrl ? imageUrl : null,
+          image: imageUrl || null,
+          file: undefined,
           input: userInput,
           output: userOutput
         });
       }
   
-      // 5) Append these new rows
-      setRows((prevRows) => [...prevRows, ...newRows]);
+      // Fetch images for all rows
+      for (let i = 0; i < newRows.length; i++) {
+        const row = newRows[i];
+        if (row.image) {
+          try {
+            const sanitizedUrl = sanitizeUrl(row.image);
+            console.log(`Fetching image for row ${i}: ${sanitizedUrl}`);
+            const response = await fetch(sanitizedUrl, { redirect: 'follow' });
+  
+            if (!response.ok) {
+              console.error(`Failed to fetch image for row ${i}: ${sanitizedUrl}`);
+              continue;
+            }
+  
+            const blob = await response.blob();
+            const uniqueFilename = `image_${i}_${Date.now()}.jpg`;
+            row.file = new File([blob], uniqueFilename, { type: blob.type });
+  
+            // Optional: for preview, use an ObjectURL
+            row.image = URL.createObjectURL(row.file);
+          } catch (err) {
+            console.error(`Error fetching image for row ${i}:`, err);
+          }
+        }
+      }
+  
+      // Add rows to state
+      setRows((prev) => [...prev, ...newRows]);
     };
   
     reader.readAsText(file);
@@ -300,25 +329,96 @@ function DashboardTasks() {
     setRows((prevRows) => prevRows.filter((_, i) => i !== targetIndex));
   };
 
-  // --- New state/handlers for advanced settings and finetuning ---
+  //
+  // 4) New state for all your model/hyperparams
+  //
+  const [modelName, setModelName] = useState('');
+  const [baseModel, setBaseModel] = useState('Phi3-V');
+  const [description, setDescription] = useState('');
+
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
   const [isFinetuning, setIsFinetuning] = useState(false);
 
-  // State for the "Optimizer" dropdown
+  // Hyperparams
+  const [epoch, setEpoch] = useState(1);
+  const [learningRate, setLearningRate] = useState(0.0001);
+  const [warmupRatio, setWarmupRatio] = useState(0.1);
+
+  // Optimizer
   const [optim, setOptim] = useState('adamw_torch');
+  const [gradientSteps, setGradientSteps] = useState(64);
+
+  // LoRA
+  const [peftR, setPeftR] = useState(8);
+  const [peftAlpha, setPeftAlpha] = useState(16);
+  const [peftDropout, setPeftDropout] = useState(0.05);
+
   const handleOptimChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setOptim(event.target.value);
   };
 
-  const handleStartFinetuning = () => {
+  //
+  // 5) handleStartFinetuning - build FormData, POST to /run_model
+  //
+  const handleStartFinetuning = async () => {
     setIsFinetuning(true);
-    // Simulate or initiate an actual finetuning process
-    // For demonstration, we keep it disabled for 5 seconds:
-    setTimeout(() => {
-      // If you want to re-enable the button later, you can reset isFinetuning here:
-      // setIsFinetuning(false);
-    }, 5000);
+    try {
+      // 1) Build metadata
+      const metadata = {
+        model_name: modelName,
+        base_model: baseModel,
+        description: description,
+        epoch,
+        learning_rate: learningRate,
+        warmup_ratio: warmupRatio,
+        optimizer: optim,
+        gradient_accumulation_steps: gradientSteps,
+        peft_r: peftR,
+        peft_alpha: peftAlpha,
+        peft_dropout: peftDropout,
+        data: rows.map((row, idx) => ({
+          rowIndex: idx,
+          input: row.input,
+          output: row.output
+        }))
+      };
+  
+      // 2) Build FormData
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(metadata));
+  
+      // 3) Append each file using the SAME field name "files"
+      rows.forEach((row, idx) => {
+        if (row.file) {
+          console.log(`Appending file for row #${idx}: ${row.file.name}, size=${row.file.size}`);
+          formData.append('files', row.file);
+        }
+      });
+  
+      // (Optional) debug how many 'files' were actually appended
+      const appendedFiles = formData.getAll('files'); // getAll returns an array
+      console.log('Number of appended files:', appendedFiles.length);
+  
+      // 4) POST to /run_model
+      const response = await fetch(`${API_HOST}/run_model`, {
+        method: 'POST',
+        body: formData
+      });
+  
+      if (!response.ok) {
+        throw new Error('Failed to start finetuning');
+      }
+  
+      const result = await response.json();
+      console.log('Finetuning started:', result);
+  
+    } catch (error) {
+      console.error('Error during finetuning:', error);
+    } finally {
+      setIsFinetuning(false);
+    }
   };
+  
 
   return (
     <>
@@ -357,24 +457,27 @@ function DashboardTasks() {
                         <Divider />
                         <Box p={4}>
                           <Grid container spacing={2}>
-                            {/* Tuned Model Name (half-width) */}
+                            {/* Tuned Model Name */}
                             <Grid item xs={12} sm={6}>
                               <TextField
                                 fullWidth
                                 label="Tuned Model Name"
                                 variant="outlined"
                                 placeholder="Enter tuned model name"
+                                value={modelName}
+                                onChange={(e) => setModelName(e.target.value)}
                               />
                             </Grid>
 
-                            {/* Choose Base Model (Dropdown, half-width) */}
+                            {/* Choose Base Model */}
                             <Grid item xs={12} sm={6}>
                               <TextField
                                 select
                                 fullWidth
                                 label="Choose Base Model"
                                 variant="outlined"
-                                value="Phi3-V" // Default selection
+                                value={baseModel}
+                                onChange={(e) => setBaseModel(e.target.value)}
                                 SelectProps={{ native: true }}
                               >
                                 <option value="Phi3-V">Phi3-V</option>
@@ -386,7 +489,7 @@ function DashboardTasks() {
                               </TextField>
                             </Grid>
 
-                            {/* Description (full-width) */}
+                            {/* Description */}
                             <Grid item xs={12}>
                               <TextField
                                 fullWidth
@@ -395,6 +498,8 @@ function DashboardTasks() {
                                 label="Description"
                                 variant="outlined"
                                 placeholder="Enter a description for the model"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
                               />
                             </Grid>
                           </Grid>
@@ -402,20 +507,21 @@ function DashboardTasks() {
                       </Card>
                     </Grid>
 
-                    {/* Collapsible Advanced Settings */}
+                    {/* Advanced Settings */}
                     <Grid item xs={12}>
                       <Card sx={{ mt: 2 }}>
                         <CardHeader
                           title="Advanced Settings"
                           action={
-                            <IconButton onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}>
+                            <IconButton
+                              onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
+                            >
                               {showAdvancedSettings ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                             </IconButton>
                           }
                         />
                         <Collapse in={showAdvancedSettings}>
                           <Divider />
-                          {/* Your Advanced Settings Content */}
                           <CardContent>
                             <Box sx={{ mb: 4 }}>
                               <Typography
@@ -431,21 +537,24 @@ function DashboardTasks() {
                                 label="Epoch"
                                 type="number"
                                 InputProps={{ inputProps: { min: 1, max: 100 } }}
-                                defaultValue={1}
+                                value={epoch}
+                                onChange={(e) => setEpoch(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                               <TextField
                                 label="Learning Rate"
                                 type="number"
                                 InputProps={{ inputProps: { step: 0.0001 } }}
-                                defaultValue={0.0001}
+                                value={learningRate}
+                                onChange={(e) => setLearningRate(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                               <TextField
                                 label="Warmup Ratio"
                                 type="number"
                                 InputProps={{ inputProps: { step: 0.1, min: 0, max: 1 } }}
-                                defaultValue={0.1}
+                                value={warmupRatio}
+                                onChange={(e) => setWarmupRatio(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                             </Box>
@@ -473,7 +582,8 @@ function DashboardTasks() {
                               <TextField
                                 label="Gradient Accumulation Steps"
                                 type="number"
-                                defaultValue={64}
+                                value={gradientSteps}
+                                onChange={(e) => setGradientSteps(+e.target.value)}
                                 InputProps={{ inputProps: { min: 1 } }}
                                 sx={{ m: 1, width: '25ch' }}
                               />
@@ -493,21 +603,24 @@ function DashboardTasks() {
                                 label="Peft R"
                                 type="number"
                                 InputProps={{ inputProps: { min: 1, max: 32 } }}
-                                defaultValue={8}
+                                value={peftR}
+                                onChange={(e) => setPeftR(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                               <TextField
                                 label="Peft Alpha"
                                 type="number"
                                 InputProps={{ inputProps: { min: 1, max: 32 } }}
-                                defaultValue={16}
+                                value={peftAlpha}
+                                onChange={(e) => setPeftAlpha(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                               <TextField
                                 label="Peft Dropout"
                                 type="number"
                                 InputProps={{ inputProps: { min: 0, max: 1, step: 0.01 } }}
-                                defaultValue={0.05}
+                                value={peftDropout}
+                                onChange={(e) => setPeftDropout(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
                               />
                             </Box>
@@ -518,7 +631,7 @@ function DashboardTasks() {
                   </Box>
                 </Grid>
 
-                {/* Table for structured data */}
+                {/* Structured Data Table */}
                 <Grid item xs={12}>
                   <Divider />
                   <Box p={4} sx={{ background: `${theme.colors.alpha.black[5]}` }}>
@@ -572,13 +685,19 @@ function DashboardTasks() {
                                           />
                                         )}
                                         <Box display="flex" justifyContent="left">
-                                          <Button variant="outlined" component="label" color="primary">
+                                          <Button
+                                            variant="outlined"
+                                            component="label"
+                                            color="primary"
+                                          >
                                             Upload
                                             <input
                                               type="file"
                                               hidden
                                               accept="image/*"
-                                              onChange={(e) => handleImageUpload(actualIndex, e)}
+                                              onChange={(e) =>
+                                                handleImageUpload(actualIndex, e)
+                                              }
                                             />
                                           </Button>
                                         </Box>
@@ -590,7 +709,9 @@ function DashboardTasks() {
                                           minRows={3}
                                           fullWidth
                                           value={row.input}
-                                          onChange={(e) => handleInputChange(actualIndex, e.target.value)}
+                                          onChange={(e) =>
+                                            handleInputChange(actualIndex, e.target.value)
+                                          }
                                           placeholder="The user's input"
                                         />
                                       </TableCell>
@@ -601,7 +722,9 @@ function DashboardTasks() {
                                           minRows={3}
                                           fullWidth
                                           value={row.output}
-                                          onChange={(e) => handleOutputChange(actualIndex, e.target.value)}
+                                          onChange={(e) =>
+                                            handleOutputChange(actualIndex, e.target.value)
+                                          }
                                           placeholder="The model's response"
                                         />
                                       </TableCell>
@@ -621,8 +744,12 @@ function DashboardTasks() {
                           </Table>
                         </TableContainer>
 
-                        {/* Pagination, Add Row, and Start Finetuning */}
-                        <Box p={2} display="flex" alignItems="center" justifyContent="space-between">
+                        <Box
+                          p={2}
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="space-between"
+                        >
                           <TablePagination
                             component="div"
                             count={rows.length}
@@ -633,7 +760,11 @@ function DashboardTasks() {
                             rowsPerPageOptions={[5, 10, 25, 50]}
                           />
                           <Box display="flex" alignItems="center">
-                            <Button variant="contained" onClick={handleAddRow} sx={{ mr: 2 }}>
+                            <Button
+                              variant="contained"
+                              onClick={handleAddRow}
+                              sx={{ mr: 2 }}
+                            >
                               Add Row
                             </Button>
 
@@ -652,13 +783,12 @@ function DashboardTasks() {
                               />
                             </Button>
 
-                            {/* Footnote beside the button */}
                             <Box>
                               <span
                                 style={{
-                                  fontSize: '0.7em', // Small font size
-                                  color: 'red', // Red text for emphasis
-                                  lineHeight: '1.2em', // Adjust line spacing
+                                  fontSize: '0.7em',
+                                  color: 'red',
+                                  lineHeight: '1.2em'
                                 }}
                               >
                                 *input, output, and<br />
@@ -667,26 +797,20 @@ function DashboardTasks() {
                             </Box>
                           </Box>
                         </Box>
-
-      {/* 4) Small footnote about CSV format (place this where you prefer) */}
-      {/* <Typography variant="caption" sx={{ ml: 2 }}>
-        <i>CSV must include headers: image_url, input, and output. The image_url can be empty.</i>
-      </Typography> */}
                       </Card>
                     </Grid>
                   </Box>
                   <Divider />
                 </Grid>
 
-                {/* Logs Box */}
+                {/* Logs & Start Finetuning */}
                 <Grid item xs={12}>
                   <Box p={4} sx={{ background: `${theme.colors.alpha.white[70]}` }}>
-                    {/* Start Finetuning Button */}
                     <Button
                       variant="contained"
-                      color="info" // Green button
-                      fullWidth // Full-width
-                      sx={{ mb: 2 }} // Margin bottom of 2
+                      color="info"
+                      fullWidth
+                      sx={{ mb: 2 }}
                       onClick={handleStartFinetuning}
                       startIcon={
                         isFinetuning ? (
@@ -700,20 +824,17 @@ function DashboardTasks() {
                       {isFinetuning ? 'Finetuning...' : 'Start Finetuning'}
                     </Button>
 
-                    {/* Logs Box */}
                     <Card>
                       <CardHeader title="Logs" />
                       <Divider />
                       <Box p={2} sx={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', color: 'white' }}>
                         <Typography variant="body2">
-                          {/* You can display logs here (append log messages as needed) */}
-                          Logs will appear here when you start finetuning..
+                          Logs will appear here when you start finetuning...
                         </Typography>
                       </Box>
                     </Card>
                   </Box>
                 </Grid>
-
               </>
             )}
 
