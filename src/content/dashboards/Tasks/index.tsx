@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useState } from 'react';
+import React, { ChangeEvent, useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import PageHeader from './PageHeader';
 import Footer from 'src/components/Footer';
@@ -131,6 +131,21 @@ function DashboardTasks() {
   const API_HOST = process.env.REACT_APP_API_HOST; 
   const theme = useTheme();
   const [currentTab, setCurrentTab] = useState<string>('analytics');
+
+  const [user, setUser] = useState<{
+    id: number;
+    name: string;
+    email: string;
+    picture: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
+  
 
   const tabs = [
     { value: 'analytics', label: 'Finetune VLM' },
@@ -268,7 +283,6 @@ function DashboardTasks() {
         if (row.image) {
           try {
             const sanitizedUrl = sanitizeUrl(row.image);
-            console.log(`Fetching image for row ${i}: ${sanitizedUrl}`);
             const response = await fetch(sanitizedUrl, { redirect: 'follow' });
   
             if (!response.ok) {
@@ -353,6 +367,57 @@ function DashboardTasks() {
   const [peftAlpha, setPeftAlpha] = useState(16);
   const [peftDropout, setPeftDropout] = useState(0.05);
 
+  const [errors, setErrors] = useState({
+    modelName: '',
+    baseModel: '',
+    description: '',
+    epoch: '',
+    learningRate: '',
+    warmupRatio: '',
+    optimizer: '',
+    gradientSteps: '',
+    peftR: '',
+    peftAlpha: '',
+    peftDropout: '',
+    rows: [],
+  });
+
+  const validateFields = () => {
+    const rowErrors = rows.map((row) => ({
+      input: row.input ? '' : 'Input is required',
+      output: row.output ? '' : 'Output is required',
+    }));
+  
+    const newErrors = {
+      modelName: modelName ? '' : 'Model name is required',
+      baseModel: baseModel ? '' : 'Base model is required',
+      description: description ? '' : 'Description is required',
+      epoch: epoch > 0 ? '' : 'Epoch must be greater than 0',
+      learningRate: learningRate > 0 ? '' : 'Learning rate must be greater than 0',
+      warmupRatio: warmupRatio >= 0 && warmupRatio <= 1 ? '' : 'Warmup ratio must be between 0 and 1',
+      optimizer: optim ? '' : 'Optimizer is required',
+      gradientSteps: gradientSteps > 0 ? '' : 'Gradient steps must be greater than 0',
+      peftR: peftR > 0 ? '' : 'Peft R is required',
+      peftAlpha: peftAlpha > 0 ? '' : 'Peft Alpha is required',
+      peftDropout: peftDropout >= 0 && peftDropout <= 1 ? '' : 'Peft Dropout must be between 0 and 1',
+      rows: rowErrors,
+    };
+  
+    // Set the errors state
+    setErrors(newErrors);
+  
+    // Check if there are no errors
+    const hasRowErrors = rowErrors.some((rowError) =>
+      Object.values(rowError).some((value) => value !== '')
+    );
+  
+    const hasFieldErrors = Object.entries(newErrors).some(
+      ([key, value]) => key !== 'rows' && value !== ''
+    );
+  
+    return !hasRowErrors && !hasFieldErrors;
+  };
+  
   const handleOptimChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setOptim(event.target.value);
   };
@@ -361,10 +426,39 @@ function DashboardTasks() {
   // 5) handleStartFinetuning - build FormData, POST to /run_model
   //
   const handleStartFinetuning = async () => {
+    if (!validateFields()) {
+      return; // Exit if validation fails
+    }
+  
     setIsFinetuning(true);
     try {
-      // 1) Build metadata
+      const finetuneResponse = await fetch(`${API_HOST}/finetune?email=${user?.email}`);
+      if (!finetuneResponse.ok) {
+        setIsFinetuning(false);
+        throw new Error('Failed to initiate finetune');
+      }
+      const finetuneData = await finetuneResponse.json();
+      console.log('Finetune initiated:', finetuneData);
+      
+      // Start 60-second countdown
+      let secondsRemaining = 60;
+      setLogMessage(`Creating docker image ${secondsRemaining} seconds remaining... (DO NOT REFRESH/CLOSE PAGE)`);
+      await new Promise<void>((resolve) => {
+        const countdownInterval = setInterval(() => {
+          secondsRemaining -= 1;
+          if (secondsRemaining > 0) {
+            setLogMessage(`Creating docker image ${secondsRemaining} seconds remaining... (DO NOT REFRESH/CLOSE PAGE)`);
+          } else {
+            clearInterval(countdownInterval);
+            setLogMessage(""); // Clear the log message after countdown
+            resolve();
+          }
+        }, 1000);
+      });
+  
+      // 1) Build metadata after countdown
       const metadata = {
+        user_email: user?.email,
         model_name: modelName,
         base_model: baseModel,
         description: description,
@@ -395,14 +489,13 @@ function DashboardTasks() {
         }
       });
   
-      // (Optional) debug how many 'files' were actually appended
-      const appendedFiles = formData.getAll('files'); // getAll returns an array
-      console.log('Number of appended files:', appendedFiles.length);
-  
       // 4) POST to /run_model
       const response = await fetch(`${API_HOST}/run_model`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+          "ngrok-skip-browser-warning": "69420" // Add this header
+        },
       });
   
       if (!response.ok) {
@@ -414,11 +507,53 @@ function DashboardTasks() {
   
     } catch (error) {
       console.error('Error during finetuning:', error);
-    } finally {
       setIsFinetuning(false);
     }
   };
   
+  
+  // PODCAST
+  const [podCastID, setPodCastID] = useState("");
+  useEffect(() => {
+    if(!user) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_HOST}/get_podcast?email=${user.email}`);
+        const data = await res.json();
+        setPodCastID(data.podcast_id);
+      } catch(e) {
+        setPodCastID("");
+        console.error(e);
+      }
+    }, 20000); // Poll every 10 seconds
+  
+    return () => clearInterval(interval);
+  }, [user]);
+
+  useEffect(() => {
+    const checkPodcast = async () => {
+      try {
+        const res = await fetch(`${API_HOST}/get_podcast?email=${user?.email}`);
+        const data = await res.json();
+        setPodCastID(data.podcast_id);
+      } catch(e) {
+        console.error(e);
+      }
+    };
+  
+    if (user) {
+      // Perform an immediate check when user info becomes available
+      checkPodcast();
+  
+      // Set up interval polling every 10 seconds
+      const interval = setInterval(checkPodcast, 10000); 
+  
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+  
+  // LOGS
+  const [logMessage, setLogMessage] = useState("");
 
   return (
     <>
@@ -466,6 +601,8 @@ function DashboardTasks() {
                                 placeholder="Enter tuned model name"
                                 value={modelName}
                                 onChange={(e) => setModelName(e.target.value)}
+                                error={!!errors.modelName}
+                                helperText={errors.modelName}
                               />
                             </Grid>
 
@@ -479,6 +616,8 @@ function DashboardTasks() {
                                 value={baseModel}
                                 onChange={(e) => setBaseModel(e.target.value)}
                                 SelectProps={{ native: true }}
+                                error={!!errors.baseModel}
+                                helperText={errors.baseModel}
                               >
                                 <option value="Phi3-V">Phi3-V</option>
                                 <option value="SmolVLM">SmolVLM</option>
@@ -500,6 +639,8 @@ function DashboardTasks() {
                                 placeholder="Enter a description for the model"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
+                                error={!!errors.description}
+                                helperText={errors.description}
                               />
                             </Grid>
                           </Grid>
@@ -540,6 +681,8 @@ function DashboardTasks() {
                                 value={epoch}
                                 onChange={(e) => setEpoch(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.epoch}
+                                helperText={errors.epoch}
                               />
                               <TextField
                                 label="Learning Rate"
@@ -548,6 +691,8 @@ function DashboardTasks() {
                                 value={learningRate}
                                 onChange={(e) => setLearningRate(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.learningRate}
+                                helperText={errors.learningRate}
                               />
                               <TextField
                                 label="Warmup Ratio"
@@ -556,6 +701,8 @@ function DashboardTasks() {
                                 value={warmupRatio}
                                 onChange={(e) => setWarmupRatio(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.warmupRatio}
+                                helperText={errors.warmupRatio}
                               />
                             </Box>
                             <Divider sx={{ my: 3 }} />
@@ -575,6 +722,8 @@ function DashboardTasks() {
                                 value={optim}
                                 onChange={handleOptimChange}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.optimizer}
+                                helperText={errors.optimizer}
                               >
                                 <MenuItem value="adamw_torch">adamw_torch</MenuItem>
                                 <MenuItem value="adamw_hf">adamw_hf</MenuItem>
@@ -586,6 +735,8 @@ function DashboardTasks() {
                                 onChange={(e) => setGradientSteps(+e.target.value)}
                                 InputProps={{ inputProps: { min: 1 } }}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.gradientSteps}
+                                helperText={errors.gradientSteps}
                               />
                             </Box>
                             <Divider sx={{ my: 3 }} />
@@ -606,6 +757,8 @@ function DashboardTasks() {
                                 value={peftR}
                                 onChange={(e) => setPeftR(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.peftR}
+                                helperText={errors.peftR}
                               />
                               <TextField
                                 label="Peft Alpha"
@@ -614,6 +767,8 @@ function DashboardTasks() {
                                 value={peftAlpha}
                                 onChange={(e) => setPeftAlpha(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.peftAlpha}
+                                helperText={errors.peftAlpha}
                               />
                               <TextField
                                 label="Peft Dropout"
@@ -622,6 +777,8 @@ function DashboardTasks() {
                                 value={peftDropout}
                                 onChange={(e) => setPeftDropout(+e.target.value)}
                                 sx={{ m: 1, width: '25ch' }}
+                                error={!!errors.peftDropout}
+                                helperText={errors.peftDropout}
                               />
                             </Box>
                           </CardContent>
@@ -713,6 +870,8 @@ function DashboardTasks() {
                                             handleInputChange(actualIndex, e.target.value)
                                           }
                                           placeholder="The user's input"
+                                          error={!!errors.rows[actualIndex]?.input}
+                                          helperText={errors.rows[actualIndex]?.input}
                                         />
                                       </TableCell>
                                       <TableCell>
@@ -726,6 +885,8 @@ function DashboardTasks() {
                                             handleOutputChange(actualIndex, e.target.value)
                                           }
                                           placeholder="The model's response"
+                                          error={!!errors.rows[actualIndex]?.output}
+                                          helperText={errors.rows[actualIndex]?.output}
                                         />
                                       </TableCell>
                                       <TableCell align="center" sx={{ width: '3%' }}>
@@ -806,30 +967,36 @@ function DashboardTasks() {
                 {/* Logs & Start Finetuning */}
                 <Grid item xs={12}>
                   <Box p={4} sx={{ background: `${theme.colors.alpha.white[70]}` }}>
-                    <Button
-                      variant="contained"
-                      color="info"
-                      fullWidth
-                      sx={{ mb: 2 }}
-                      onClick={handleStartFinetuning}
-                      startIcon={
-                        isFinetuning ? (
-                          <CircularProgress size={20} color="inherit" />
-                        ) : (
-                          <PlayArrowIcon />
-                        )
-                      }
-                      disabled={isFinetuning}
-                    >
-                      {isFinetuning ? 'Finetuning...' : 'Start Finetuning'}
-                    </Button>
 
+                  {/* Disable button if not signed in or currently finetuning */}
+                  <Button
+                    variant="contained"
+                    color="info"
+                    fullWidth
+                    sx={{ mb: 2 }}
+                    onClick={handleStartFinetuning}
+                    startIcon={
+                      podCastID!=="" ? (
+                        <CircularProgress size={20} color="inherit" />
+                      ) : (
+                        <PlayArrowIcon />
+                      )
+                    }
+                    disabled={!user?.email || isFinetuning || podCastID!==""} // Disable when not signed in or finetuning
+                  >
+                    {podCastID!=="" ? 'Finetuning...' : 'Start Finetuning'}
+                  </Button>
+                  {!user?.email && (
+                    <Typography variant="subtitle1" sx={{ mb: 2, color: 'red' }}>
+                      *Please sign in to start finetuning
+                    </Typography>
+                  )}
                     <Card>
                       <CardHeader title="Logs" />
                       <Divider />
                       <Box p={2} sx={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', color: 'white' }}>
                         <Typography variant="body2">
-                          Logs will appear here when you start finetuning...
+                          {logMessage || "Logs will appear here when you start finetuning..."}
                         </Typography>
                       </Box>
                     </Card>

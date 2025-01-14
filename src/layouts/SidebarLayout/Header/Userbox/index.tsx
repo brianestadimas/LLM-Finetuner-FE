@@ -1,7 +1,5 @@
-import { useRef, useState } from 'react';
-
+import { useRef, useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-
 import {
   Avatar,
   Box,
@@ -15,76 +13,97 @@ import {
   Popover,
   Typography
 } from '@mui/material';
-
-import InboxTwoToneIcon from '@mui/icons-material/InboxTwoTone';
 import { styled } from '@mui/material/styles';
 import ExpandMoreTwoToneIcon from '@mui/icons-material/ExpandMoreTwoTone';
 import AccountBoxTwoToneIcon from '@mui/icons-material/AccountBoxTwoTone';
-import LockOpenTwoToneIcon from '@mui/icons-material/LockOpenTwoTone';
+import InboxTwoToneIcon from '@mui/icons-material/InboxTwoTone';
 import AccountTreeTwoToneIcon from '@mui/icons-material/AccountTreeTwoTone';
+import LockOpenTwoToneIcon from '@mui/icons-material/LockOpenTwoTone';
+import { GoogleLogin } from '@react-oauth/google';
 
+// 1) Our styled components
 const UserBoxButton = styled(Button)(
   ({ theme }) => `
-        padding-left: ${theme.spacing(1)};
-        padding-right: ${theme.spacing(1)};
+    padding-left: ${theme.spacing(1)};
+    padding-right: ${theme.spacing(1)};
 `
 );
 
 const MenuUserBox = styled(Box)(
   ({ theme }) => `
-        background: ${theme.colors.alpha.black[5]};
-        padding: ${theme.spacing(2)};
+    background: ${theme.colors.alpha.black[5]};
+    padding: ${theme.spacing(2)};
 `
 );
 
 const UserBoxText = styled(Box)(
   ({ theme }) => `
-        text-align: left;
-        padding-left: ${theme.spacing(1)};
+    text-align: left;
+    padding-left: ${theme.spacing(1)};
 `
 );
 
 const UserBoxLabel = styled(Typography)(
   ({ theme }) => `
-        font-weight: ${theme.typography.fontWeightBold};
-        color: ${theme.palette.secondary.main};
-        display: block;
+    font-weight: ${theme.typography.fontWeightBold};
+    color: ${theme.palette.secondary.main};
+    display: block;
 `
 );
 
 const UserBoxDescription = styled(Typography)(
   ({ theme }) => `
-        color: ${lighten(theme.palette.secondary.main, 0.5)}
+    color: ${lighten(theme.palette.secondary.main, 0.5)}
 `
 );
 
 function HeaderUserbox() {
-  const user = {
-    name: 'Brian Test',
-    avatar: '/static/images/avatars/1.jpg',
-    jobtitle: 'Project Manager'
-  };
+  const [user, setUser] = useState<{
+    id: number;
+    name: string;
+    email: string;
+    picture: string;
+  } | null>(null);
+
+  const API_HOST = process.env.REACT_APP_API_HOST; 
 
   const ref = useRef<any>(null);
   const [isOpen, setOpen] = useState<boolean>(false);
 
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
+
   const handleOpen = (): void => {
     setOpen(true);
   };
-
   const handleClose = (): void => {
     setOpen(false);
   };
 
+  // 4) Sign-out logic
+  const handleSignOut = () => {
+    localStorage.removeItem('user');
+    setUser(null);
+    window.location.reload();
+  };
+
+  const displayName = user ? user.name : 'Sign in';
+  const avatarSrc = user ? user.picture : '/static/images/avatars/default.png';
+
+
   return (
     <>
       <UserBoxButton color="secondary" ref={ref} onClick={handleOpen}>
-        <Avatar variant="rounded" alt={user.name} src={user.avatar} />
+        <Avatar variant="rounded" alt={displayName} src={avatarSrc} />
         <Hidden mdDown>
           <UserBoxText>
-            <UserBoxLabel variant="body1">{user.name}</UserBoxLabel>
+            <UserBoxLabel variant="body1">{displayName}</UserBoxLabel>
             <UserBoxDescription variant="body2">
-              {user.jobtitle}
+              {user ? user.email : ''}
             </UserBoxDescription>
           </UserBoxText>
         </Hidden>
@@ -92,6 +111,7 @@ function HeaderUserbox() {
           <ExpandMoreTwoToneIcon sx={{ ml: 1 }} />
         </Hidden>
       </UserBoxButton>
+
       <Popover
         anchorEl={ref.current}
         onClose={handleClose}
@@ -105,41 +125,77 @@ function HeaderUserbox() {
           horizontal: 'right'
         }}
       >
-        <MenuUserBox sx={{ minWidth: 210 }} display="flex">
-          <Avatar variant="rounded" alt={user.name} src={user.avatar} />
-          <UserBoxText>
-            <UserBoxLabel variant="body1">{user.name}</UserBoxLabel>
-            <UserBoxDescription variant="body2">
-              {user.jobtitle}
-            </UserBoxDescription>
-          </UserBoxText>
-        </MenuUserBox>
-        <Divider sx={{ mb: 0 }} />
-        <List sx={{ p: 1 }} component="nav">
-          <ListItem button to="/" component={NavLink}>
-            <AccountBoxTwoToneIcon fontSize="small" />
-            <ListItemText primary="My Profile" />
-          </ListItem>
-          <ListItem button to="/" component={NavLink}>
-            <InboxTwoToneIcon fontSize="small" />
-            <ListItemText primary="Messenger" />
-          </ListItem>
-          <ListItem
-            button
-            to="/"
-            component={NavLink}
-          >
-            <AccountTreeTwoToneIcon fontSize="small" />
-            <ListItemText primary="Account Settings" />
-          </ListItem>
-        </List>
-        <Divider />
-        <Box sx={{ m: 1 }}>
-          <Button color="primary" fullWidth>
-            <LockOpenTwoToneIcon sx={{ mr: 1 }} />
-            Sign out
-          </Button>
-        </Box>
+        {!user && (
+          <Box sx={{ p: 2 }}>
+            <Typography variant="h6">Please Sign In</Typography>
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                // 1) Send credential to your backend
+                try {
+                  const resp = await fetch(`${API_HOST}/api/login/google`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      credential: credentialResponse.credential
+                    })
+                  });
+                  const data = await resp.json();
+                  if (data.user) {
+                    // 2) Save user in local storage
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    setUser(data.user);
+
+                    window.location.reload();
+                  }
+                } catch (err) {
+                  console.error(err);
+                }
+              }}
+              onError={() => console.log('Login Failed')}
+              useOneTap
+            />
+          </Box>
+        )}
+
+
+        {/* If user is logged in, show the user info + sign out */}
+        {user && (
+          <>
+            <MenuUserBox sx={{ minWidth: 210 }} display="flex">
+              <Avatar variant="rounded" alt={user.name} src={user.picture} />
+              <UserBoxText>
+                <UserBoxLabel variant="body1">{user.name}</UserBoxLabel>
+                <UserBoxDescription variant="body2">
+                  {user.email}
+                </UserBoxDescription>
+              </UserBoxText>
+            </MenuUserBox>
+            <Divider sx={{ mb: 0 }} />
+            <List sx={{ p: 1 }} component="nav">
+              <ListItem button to="/" component={NavLink}>
+                <AccountBoxTwoToneIcon fontSize="small" />
+                <ListItemText primary="My Profile" />
+              </ListItem>
+              <ListItem button to="/" component={NavLink}>
+                <InboxTwoToneIcon fontSize="small" />
+                <ListItemText primary="Messenger" />
+              </ListItem>
+              <ListItem button to="/" component={NavLink}>
+                <AccountTreeTwoToneIcon fontSize="small" />
+                <ListItemText primary="Account Settings" />
+              </ListItem>
+            </List>
+            <Divider />
+            <Box sx={{ m: 1 }}>
+              <Button color="primary" fullWidth onClick={handleSignOut}>
+                <LockOpenTwoToneIcon sx={{ mr: 1 }} />
+                Sign out
+              </Button>
+            </Box>
+          </>
+        )}
       </Popover>
     </>
   );

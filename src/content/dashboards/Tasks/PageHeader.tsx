@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import DocumentScannerTwoToneIcon from '@mui/icons-material/DocumentScannerTwoTone';
 import AddAlertTwoToneIcon from '@mui/icons-material/AddAlertTwoTone';
+import { useRef, useState, useEffect } from 'react';
 
 const AvatarPageTitle = styled(Avatar)(
   ({ theme }) => `
@@ -35,10 +36,24 @@ const AvatarPageTitle = styled(Avatar)(
 );
 
 function PageHeader() {
-  const user = {
-    name: 'Brian Test',
-    avatar: '/static/images/avatars/1.jpg'
-  };
+  // const user = {
+  //   name: 'Brian Test',
+  //   avatar: '/static/images/avatars/1.jpg'
+  // };
+
+  const [user, setUser] = useState<{
+    id: number;
+    name: string;
+    email: string;
+    picture: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   return (
     <Box
@@ -53,7 +68,7 @@ function PageHeader() {
         </AvatarPageTitle>
         <Box>
           <Typography variant="h3" component="h3" gutterBottom>
-            Welcome, {user.name}!
+            Welcome, {user?.name}
           </Typography>
           <Typography variant="subtitle2">
             Finetune to streamline your workflow and enhance your model’s performance with precision. 
