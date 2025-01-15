@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useEffect, useState } from 'react';
+import React, { ChangeEvent, useEffect, useState, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
 import PageHeader from './PageHeader';
 import Footer from 'src/components/Footer';
@@ -129,6 +129,7 @@ const TabsContainerWrapper = styled(Box)(
 
 function DashboardTasks() {
   const API_HOST = process.env.REACT_APP_API_HOST; 
+  const POD_API_HOST = (podcast_id) => `https://${podcast_id}.proxy.runpod.net`;
   const theme = useTheme();
   const [currentTab, setCurrentTab] = useState<string>('analytics');
 
@@ -433,6 +434,9 @@ function DashboardTasks() {
     setIsFinetuning(true);
     try {
       const finetuneResponse = await fetch(`${API_HOST}/finetune?email=${user?.email}`);
+      // headers: {
+      //   "ngrok-skip-browser-warning": "69420" // Add this header
+      // },
       if (!finetuneResponse.ok) {
         setIsFinetuning(false);
         throw new Error('Failed to initiate finetune');
@@ -441,7 +445,7 @@ function DashboardTasks() {
       console.log('Finetune initiated:', finetuneData);
       
       // Start 60-second countdown
-      let secondsRemaining = 60;
+      let secondsRemaining = 40;
       setLogMessage(`Creating docker image ${secondsRemaining} seconds remaining... (DO NOT REFRESH/CLOSE PAGE)`);
       await new Promise<void>((resolve) => {
         const countdownInterval = setInterval(() => {
@@ -455,7 +459,9 @@ function DashboardTasks() {
           }
         }, 1000);
       });
-  
+
+      setStartStreaming(true);
+
       // 1) Build metadata after countdown
       const metadata = {
         user_email: user?.email,
@@ -488,14 +494,15 @@ function DashboardTasks() {
           formData.append('files', row.file);
         }
       });
-  
       // 4) POST to /run_model
-      const response = await fetch(`${API_HOST}/run_model`, {
+      const currentPodCastID = podCastIDRef.current;
+      if (!currentPodCastID) {
+        console.log('Podcast ID not found');
+        throw new Error('Podcast ID not found');
+      }
+      const response = await fetch(`${POD_API_HOST(currentPodCastID)}/run_model`, {
         method: 'POST',
         body: formData,
-        headers: {
-          "ngrok-skip-browser-warning": "69420" // Add this header
-        },
       });
   
       if (!response.ok) {
@@ -506,38 +513,24 @@ function DashboardTasks() {
       console.log('Finetuning started:', result);
   
     } catch (error) {
-      console.error('Error during finetuning:', error);
       setIsFinetuning(false);
     }
   };
   
   
   // PODCAST
+  const podCastIDRef = useRef("");
   const [podCastID, setPodCastID] = useState("");
-  useEffect(() => {
-    if(!user) return;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`${API_HOST}/get_podcast?email=${user.email}`);
-        const data = await res.json();
-        setPodCastID(data.podcast_id);
-      } catch(e) {
-        setPodCastID("");
-        console.error(e);
-      }
-    }, 20000); // Poll every 10 seconds
-  
-    return () => clearInterval(interval);
-  }, [user]);
-
   useEffect(() => {
     const checkPodcast = async () => {
       try {
         const res = await fetch(`${API_HOST}/get_podcast?email=${user?.email}`);
         const data = await res.json();
         setPodCastID(data.podcast_id);
-      } catch(e) {
-        console.error(e);
+        podCastIDRef.current = data.podcast_id;
+      } catch (e) {
+        setPodCastID(""); // Reset podcast ID on error
+        podCastIDRef.current = "";
       }
     };
   
@@ -545,15 +538,43 @@ function DashboardTasks() {
       // Perform an immediate check when user info becomes available
       checkPodcast();
   
-      // Set up interval polling every 10 seconds
-      const interval = setInterval(checkPodcast, 10000); 
+      // Set up interval polling every 20 seconds
+      const interval = setInterval(checkPodcast, 20000);
   
-      return () => clearInterval(interval);
+      return () => clearInterval(interval); // Clean up interval on unmount
     }
   }, [user]);
   
   // LOGS
   const [logMessage, setLogMessage] = useState("");
+
+  // STREAMING
+  const [logs, setLogs] = useState<string[]>([]);
+  const [startStreaming, setStartStreaming] = useState(false);
+
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    const currentPodCastID = podCastIDRef.current;
+    if (startStreaming) {
+      eventSource = new EventSource(`${POD_API_HOST(currentPodCastID)}/logs`);
+  
+      eventSource.onmessage = (e) => {
+        setLogs(prevLogs => [...prevLogs, e.data]);
+      };
+  
+      eventSource.onerror = (error) => {
+        console.error("EventSource encountered an error:", error);
+        eventSource?.close();
+      };
+    }
+  
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
+  }, [startStreaming, API_HOST]);
+
 
   return (
     <>
@@ -948,7 +969,7 @@ function DashboardTasks() {
                               <span
                                 style={{
                                   fontSize: '0.7em',
-                                  color: 'red',
+                                  color: 'white',
                                   lineHeight: '1.2em'
                                 }}
                               >
@@ -987,19 +1008,33 @@ function DashboardTasks() {
                     {podCastID!=="" ? 'Finetuning...' : 'Start Finetuning'}
                   </Button>
                   {!user?.email && (
-                    <Typography variant="subtitle1" sx={{ mb: 2, color: 'red' }}>
+                    <Typography variant="subtitle1" sx={{ mb: 2, color: 'white' }}>
                       *Please sign in to start finetuning
                     </Typography>
                   )}
                     <Card>
                       <CardHeader title="Logs" />
                       <Divider />
-                      <Box p={2} sx={{ backgroundColor: 'rgba(0, 0, 0, 0.8)', color: 'white' }}>
+                      <Box
+                        p={2}
+                        sx={{
+                          backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                          color: 'white',
+                          overflowY: 'auto',
+                          maxHeight: 400,  // Increased height to show more lines before scrolling
+                          fontFamily: 'monospace',
+                          whiteSpace: 'pre-wrap'
+                        }}
+                      >
                         <Typography variant="body2">
-                          {logMessage || "Logs will appear here when you start finetuning..."}
+                          {logMessage && <div>{logMessage}</div>}
+                          {logs.length > 0
+                            ? logs.map((log, idx) => <div key={idx}>{log}</div>)
+                            : (!logMessage && "Logs will appear here when you start finetuning...")}
                         </Typography>
                       </Box>
                     </Card>
+
                   </Box>
                 </Grid>
               </>
